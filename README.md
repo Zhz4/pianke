@@ -89,6 +89,33 @@ python app.py --port 8080 --no-browser
 > pip install --force-reinstall --no-deps "opencv-contrib-python>=4.9"
 > ```
 
+### 方式三：Docker / GHCR 镜像
+
+项目提供 Dockerfile，并通过 GitHub Actions 在手动触发或发布 Release 时构建镜像到 GitHub Container Registry：
+
+```bash
+docker pull ghcr.io/zhaoyue4810/pianke:latest
+docker run --rm -it \
+  -p 5057:5057 \
+  -v /你的照片目录:/photos \
+  -v pianke-data:/data \
+  ghcr.io/zhaoyue4810/pianke:latest
+```
+
+启动后访问 `http://localhost:5057`，网页里填写容器内路径，例如 `/photos`。
+
+如需配置土豪模式，可在运行时传入环境变量：
+
+```bash
+docker run --rm -it \
+  -p 5057:5057 \
+  -v /你的照片目录:/photos \
+  -v pianke-data:/data \
+  -e ARK_API_KEY=你的key \
+  -e ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3 \
+  ghcr.io/zhaoyue4810/pianke:latest
+```
+
 ---
 
 ## 选片工作流

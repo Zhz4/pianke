@@ -204,3 +204,20 @@ def test_confirm_prescreen_groups_only_passed_and_restored_photos(tmp_path):
     assert bad_restore.path in tournament_images
     assert bad_drop.path not in tournament_images
     assert app.SESSION.prescreen_reviewed is True
+
+
+def test_main_accepts_host_argument_for_container_runtime(monkeypatch):
+    app = import_app_module()
+    run_args = {}
+
+    def fake_run(**kwargs):
+        run_args.update(kwargs)
+
+    monkeypatch.setattr(sys, "argv", ["app.py", "--host", "0.0.0.0", "--port", "5057", "--no-browser"])
+    monkeypatch.setattr(app, "setup_logger", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(app.app, "run", fake_run)
+
+    app.main()
+
+    assert run_args["host"] == "0.0.0.0"
+    assert run_args["port"] == 5057

@@ -3792,6 +3792,7 @@ def api_watermark_open_out_dir():
 
 def main():
     parser = argparse.ArgumentParser(description="本地照片擂台选片工具")
+    parser.add_argument("--host", default=os.environ.get("PIC_SELECTER_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=5057)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
@@ -3803,7 +3804,7 @@ def main():
         print(f"（脚本访问 token 已启用：X-Token: {SCRIPT_TOKEN[:8]}...）")
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
-    app.run(host="127.0.0.1", port=args.port, debug=False)
+    app.run(host=args.host, port=args.port, debug=False)
 
 
 if __name__ == "__main__":
