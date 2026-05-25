@@ -40,6 +40,10 @@ INSTALL_INFO = ROOT / ".pic_selecter_install.json"
 
 IS_WIN = os.name == "nt"
 PY_IN_VENV = VENV / ("Scripts" if IS_WIN else "bin") / ("python.exe" if IS_WIN else "python")
+UV_CACHE_DIR = ROOT / ".uv-cache"
+UV_PYTHON_DIR = ROOT / ".uv-python"
+PIP_CACHE_DIR = ROOT / ".pip-cache"
+TEMP_DIR = ROOT / ".tmp"
 
 # 国内镜像源（pip / HuggingFace）。设 PIANKE_NO_MIRROR=1 关闭。
 USE_MIRROR = os.environ.get("PIANKE_NO_MIRROR", "0") != "1"
@@ -313,15 +317,40 @@ def have_uv() -> str | None:
     return None
 
 
+def dependency_env() -> dict[str, str]:
+    """Keep dependency caches and wheel extraction off the system drive."""
+    env = os.environ.copy()
+    UV_CACHE_DIR.mkdir(exist_ok=True)
+    UV_PYTHON_DIR.mkdir(exist_ok=True)
+    PIP_CACHE_DIR.mkdir(exist_ok=True)
+    TEMP_DIR.mkdir(exist_ok=True)
+    env.setdefault("UV_CACHE_DIR", str(UV_CACHE_DIR))
+    env.setdefault("UV_PYTHON_INSTALL_DIR", str(UV_PYTHON_DIR))
+    env.setdefault("UV_MANAGED_PYTHON", "1")
+    env.setdefault("PIP_CACHE_DIR", str(PIP_CACHE_DIR))
+    env.setdefault("TMP", str(TEMP_DIR))
+    env.setdefault("TEMP", str(TEMP_DIR))
+    return env
+
+
 def ensure_venv() -> None:
     if PY_IN_VENV.exists():
-        return
+        rc = subprocess.run(
+            [str(PY_IN_VENV), "-c", "import sys; print(sys.executable)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=dependency_env(),
+        )
+        if rc.returncode == 0:
+            return
+        warn("检测到 .venv 已损坏（Python 解释器不可用），正在重建...")
+        shutil.rmtree(VENV, ignore_errors=True)
     info("创建虚拟环境 .venv/（首次约 5-30 秒，需要时会自动下载 Python）...")
     info("看到 'Downloading cpython...' 滚动是正常的，请耐心等待。")
     uv = have_uv()
     if uv:
         # uv 创建 venv 更快，且能自动下载合适版本的 Python
-        subprocess.check_call([uv, "venv", str(VENV), "--python", ">=3.10"])
+        subprocess.check_call([uv, "venv", str(VENV), "--python", ">=3.10", "--managed-python"], env=dependency_env())
     else:
         # 退化到 stdlib venv
         subprocess.check_call([sys.executable, "-m", "venv", str(VENV)])
@@ -359,7 +388,7 @@ def pip_install(packages: list[str]) -> None:
         info("（海外用户想用 PyPI 官方源请在终端先 `export PIANKE_NO_MIRROR=1` 再启动）")
     info("接下来会看到 pip 滚动下载进度条——只要在动就是在装，不要关窗口。")
     print()
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd, env=dependency_env())
     print()
     _ensure_opencv_single()
 
@@ -380,12 +409,13 @@ def _ensure_opencv_single() -> None:
          "found=[n for n in names if any(d.metadata['Name'].lower()==n for d in m.distributions())]; "
          "print('|'.join(found))"],
         capture_output=True, text=True,
+        env=dependency_env(),
     )
     conflicts = [s for s in (rc.stdout or "").strip().split("|") if s]
     if not conflicts:
         return
     info(f"检测到冲突的 OpenCV 包：{', '.join(conflicts)}，正在清理...")
-    subprocess.call([py, "-m", "pip", "uninstall", "-y", *conflicts])
+    subprocess.call([py, "-m", "pip", "uninstall", "-y", *conflicts], env=dependency_env())
     # 重新拉 contrib 修复 cv2 共享文件
     uv = have_uv()
     cmd = ([uv, "pip", "install", "--python", py] if uv else
@@ -395,7 +425,7 @@ def _ensure_opencv_single() -> None:
         flag = "--index-url" if uv else "-i"
         cmd += [flag, PYPI_MIRROR, "--extra-index-url", "https://pypi.org/simple/"]
     cmd += ["opencv-contrib-python>=4.9"]
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd, env=dependency_env())
     info("OpenCV 已修复（只保留 contrib 版） ✓")
 
 

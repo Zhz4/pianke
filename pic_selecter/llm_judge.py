@@ -573,17 +573,23 @@ def list_models() -> list[dict]:
     except Exception as e:
         raise LLMJudgeError(f"调用 Ark /models 失败：{type(e).__name__}: {e}") from e
 
+    # 仅当走火山官方域名时套用 Seed 过滤；第三方 OpenAI 兼容端点返回的模型 id
+    # 不会带 seed/doubao 字样，过滤会得到空列表 → 整列下拉不可用。
+    base_url = os.getenv("ARK_BASE_URL", DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
+    is_volces = "volces.com" in base_url.lower() or "volcengineapi.com" in base_url.lower()
+
     out: list[dict] = []
     for m in getattr(resp, "data", []) or []:
         mid = getattr(m, "id", "") or ""
         if not mid:
             continue
-        # 只保留 Seed 系列视觉模型（doubao-seed-* 或包含 vision 的）
-        low = mid.lower()
-        is_seed = "seed" in low or "doubao" in low
-        is_vision = "vision" in low or "vl" in low or "seed" in low
-        if not (is_seed and is_vision):
-            continue
+        if is_volces:
+            # 火山官方：只保留 Seed 系列视觉模型（doubao-seed-* 或包含 vision 的）
+            low = mid.lower()
+            is_seed = "seed" in low or "doubao" in low
+            is_vision = "vision" in low or "vl" in low or "seed" in low
+            if not (is_seed and is_vision):
+                continue
         tier = _tier_of(mid)
         out.append({
             "id": mid,
@@ -596,8 +602,10 @@ def list_models() -> list[dict]:
     out.sort(key=lambda x: (tier_order.get(x["tier"], 9), x["id"]))
 
     if not out:
-        # API 返回不含 Seed 视觉模型——可能账号未开通；给个明确提示
-        logger.warning("llm_judge: /models 未返回 Seed 系列视觉模型——账号可能未开通")
+        if is_volces:
+            logger.warning("llm_judge: /models 未返回 Seed 系列视觉模型——账号可能未开通")
+        else:
+            logger.warning(f"llm_judge: /models 未返回任何模型（base_url={base_url}）")
 
     _MODELS_CACHE["at"] = now
     _MODELS_CACHE["data"] = out

@@ -38,6 +38,10 @@ img/
 
 # 运行时缓存与状态
 .cache/
+.uv-cache/
+.uv-python/
+.pip-cache/
+.tmp/
 state.json
 *.session.json
 log.txt

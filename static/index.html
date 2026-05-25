@@ -59,7 +59,12 @@
           <!-- 录入 Key 的展开区（默认折叠） -->
           <div class="tycoon-key-edit" id="tycoon-key-edit" hidden>
             <div class="tycoon-row">
-              <input type="password" id="tycoon-key-input" placeholder="粘贴火山引擎 API Key（仅本机存储）" autocomplete="off" spellcheck="false">
+              <input type="password" id="tycoon-key-input" placeholder="粘贴 API Key（仅本机存储）" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="tycoon-row">
+              <input type="text" id="tycoon-base-url-input" placeholder="Base URL（留空使用火山官方 https://ark.cn-beijing.volces.com/api/v3）" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="tycoon-row">
               <button type="button" id="tycoon-key-save" class="btn btn-primary btn-small">验证并保存</button>
               <button type="button" id="tycoon-key-cancel" class="btn-ghost btn-small">取消</button>
               <button type="button" id="tycoon-key-clear" class="btn-ghost btn-small btn-danger" hidden>清除</button>
@@ -67,7 +72,7 @@
             <p class="tycoon-hint">
               没有 Key？前往
               <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank" rel="noopener">火山引擎 Ark 控制台</a>
-              申请，开通"豆包·视觉" Seed 系列模型权限后复制粘贴。Key 保存在本地 <code>~/.config/pic_selecter/ark_key</code>（权限 0600）。
+              申请。也可填写任意 OpenAI 兼容端点的 Base URL（如自建代理 / OneAPI 等）。Key 保存在本地 <code>~/.config/pic_selecter/ark_key</code>（权限 0600）。
             </p>
           </div>
           <!-- 模型选择 -->

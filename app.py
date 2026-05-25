@@ -190,6 +190,7 @@ logger = logging.getLogger("pic_selecter")
 # 折中方案：UI 录入 → 写本地配置文件 + 立即设到 os.environ → 当前进程生效；
 # 下次启动从文件读回设到 os.environ。等价于"网页录入持久化环境变量"。
 ARK_KEY_FILE = Path.home() / ".config" / "pic_selecter" / "ark_key"
+ARK_BASE_URL_FILE = Path.home() / ".config" / "pic_selecter" / "ark_base_url"
 
 
 def _mask_key(k: str) -> str:
@@ -226,8 +227,28 @@ def _save_ark_key_to_file(key: str) -> None:
         pass  # Windows 没 chmod，不致命
 
 
-# 启动期：从文件载入 key（env var 优先）
+def _load_ark_base_url_from_file() -> None:
+    """与 key 同策略：env var 优先，否则从文件读到 os.environ。"""
+    if os.environ.get("ARK_BASE_URL"):
+        return
+    try:
+        if ARK_BASE_URL_FILE.exists():
+            url = ARK_BASE_URL_FILE.read_text(encoding="utf-8").strip()
+            if url:
+                os.environ["ARK_BASE_URL"] = url
+                logger.info(f"已从 {ARK_BASE_URL_FILE} 载入 ARK_BASE_URL={url}")
+    except OSError as e:
+        logger.warning(f"读取 ARK base_url 文件失败: {e}")
+
+
+def _save_ark_base_url_to_file(url: str) -> None:
+    ARK_BASE_URL_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ARK_BASE_URL_FILE.write_text(url, encoding="utf-8")
+
+
+# 启动期：从文件载入 key + base_url（env var 优先）
 _load_ark_key_from_file()
+_load_ark_base_url_from_file()
 
 
 def setup_logger(folder: Optional[str]) -> None:
@@ -2099,72 +2120,115 @@ def index():
 
 @app.route("/api/ark_key", methods=["GET"])
 def api_ark_key_status():
-    """返回 Ark API Key 当前状态——给 UI 决定显示"已配置/未配置"。"""
+    """返回 Ark API Key 当前状态——给 UI 决定显示"已配置/未配置"。
+
+    同时回传 base_url（明文），方便 UI 把当前值回填到输入框。
+    """
     key = os.environ.get("ARK_API_KEY", "")
+    base_url = os.environ.get("ARK_BASE_URL", "").strip()
     if not key:
-        return jsonify({"configured": False, "source": None, "masked": None})
+        return jsonify({
+            "configured": False,
+            "source": None,
+            "masked": None,
+            "base_url": base_url,
+        })
     # source: env 表示来自用户 export；file 表示我们存的；优先级 env > file
     source = "file" if ARK_KEY_FILE.exists() and ARK_KEY_FILE.read_text(encoding="utf-8").strip() == key else "env"
     return jsonify({
         "configured": True,
         "source": source,
         "masked": _mask_key(key),
+        "base_url": base_url,
     })
 
 
 @app.route("/api/ark_key", methods=["POST"])
 def api_ark_key_set():
-    """前端录入 API Key：写到本地配置文件 + 设到 os.environ + 测试连通性。
-    失败（包括 Ark 拒绝认证）→ 返回错误，不保存到文件。"""
+    """前端录入 API Key (+ 可选 base_url)：写本地文件 + 设 os.environ + 测连通性。
+    失败 → 回滚 env，不写文件。
+
+    验证策略：list_models() 不抛错就算过；模型列表为空只 warning（兼容
+    OpenAI 兼容第三方端点 /models 不一定返回视觉模型的情况）。
+    """
     data = request.get_json(force=True) or {}
     key = (data.get("key") or "").strip()
+    base_url_in = (data.get("base_url") or "").strip()
     if not key:
         return jsonify({"error": "key 不能为空"}), 400
-    # 先临时设 os.environ 测试一下；通过了再写文件
-    prev = os.environ.get("ARK_API_KEY")
+    # 简易校验：base_url 必须 http(s) 开头（留空表示沿用火山默认）
+    if base_url_in and not (base_url_in.startswith("http://") or base_url_in.startswith("https://")):
+        return jsonify({"error": "base_url 必须以 http:// 或 https:// 开头"}), 400
+
+    # 先临时设 env 测试；通过了再写文件
+    prev_key = os.environ.get("ARK_API_KEY")
+    prev_base = os.environ.get("ARK_BASE_URL")
     os.environ["ARK_API_KEY"] = key
+    if base_url_in:
+        os.environ["ARK_BASE_URL"] = base_url_in
+    else:
+        # 用户清空 → 让客户端走默认值
+        os.environ.pop("ARK_BASE_URL", None)
+
     try:
         from pic_selecter import llm_judge
-        # 强制重新建客户端（旧的可能是用空 key 创的）
+        # 强制重建客户端（旧的可能用了空 key 或旧 base_url）
         llm_judge._CLIENT = None
         llm_judge._MODELS_CACHE = {"at": 0.0, "data": None}
         models = llm_judge.list_models()
-        if not models:
-            raise RuntimeError("Ark 账号无可用的 Seed 系列视觉模型，请到火山引擎控制台开通后重试")
     except Exception as e:
-        # 回滚
-        if prev is None:
+        # 回滚 env
+        if prev_key is None:
             os.environ.pop("ARK_API_KEY", None)
         else:
-            os.environ["ARK_API_KEY"] = prev
+            os.environ["ARK_API_KEY"] = prev_key
+        if prev_base is None:
+            os.environ.pop("ARK_BASE_URL", None)
+        else:
+            os.environ["ARK_BASE_URL"] = prev_base
         try:
             from pic_selecter import llm_judge
             llm_judge._CLIENT = None
         except Exception:
             pass
         return jsonify({"error": f"验证失败：{type(e).__name__}: {e}"}), 400
+
     # 通过 → 写文件
     try:
         _save_ark_key_to_file(key)
+        if base_url_in:
+            _save_ark_base_url_to_file(base_url_in)
+        else:
+            # 用户清空 base_url → 删持久化文件（下次启动用默认）
+            try:
+                if ARK_BASE_URL_FILE.exists():
+                    ARK_BASE_URL_FILE.unlink()
+            except OSError:
+                pass
     except OSError as e:
-        return jsonify({"error": f"key 已生效但持久化失败：{e}", "masked": _mask_key(key)}), 200
-    logger.info(f"Ark API Key 已更新，{len(models)} 个 Seed 模型可用")
+        return jsonify({"error": f"已生效但持久化失败：{e}", "masked": _mask_key(key)}), 200
+
+    logger.info(f"Ark API Key 已更新，base_url={base_url_in or '<default>'}，{len(models)} 个模型可用")
     return jsonify({
         "ok": True,
         "masked": _mask_key(key),
+        "base_url": base_url_in,
         "model_count": len(models),
     })
 
 
 @app.route("/api/ark_key", methods=["DELETE"])
 def api_ark_key_clear():
-    """清除 API Key：删本地文件 + 从 os.environ 移除。"""
+    """清除 API Key + base_url：删本地文件 + 从 os.environ 移除。"""
     os.environ.pop("ARK_API_KEY", None)
+    os.environ.pop("ARK_BASE_URL", None)
     try:
         if ARK_KEY_FILE.exists():
             ARK_KEY_FILE.unlink()
+        if ARK_BASE_URL_FILE.exists():
+            ARK_BASE_URL_FILE.unlink()
     except OSError as e:
-        return jsonify({"error": f"删除 key 文件失败: {e}"}), 500
+        return jsonify({"error": f"删除 key/base_url 文件失败: {e}"}), 500
     try:
         from pic_selecter import llm_judge
         llm_judge._CLIENT = None

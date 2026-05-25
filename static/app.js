@@ -312,14 +312,20 @@ async function refreshArkKeyStatus() {
   const badge = $("tycoon-key-badge");
   const btn = $("tycoon-key-btn");
   const select = $("llm-model-select");
+  const baseInput = $("tycoon-base-url-input");
   if (!badge) return;
   try {
     const r = await fetch("/api/ark_key");
     const data = await r.json();
     arkKeyConfigured = !!data.configured;
+    // base_url 回填到输入框（空字符串 = 走默认）
+    if (baseInput && document.activeElement !== baseInput) {
+      baseInput.value = data.base_url || "";
+    }
     if (data.configured) {
       const src = data.source === "env" ? "环境变量" : "本地存储";
-      badge.innerHTML = `<span class="tycoon-key-ok">●</span> Key 已配置 <span class="tycoon-key-mask">${data.masked || ""}</span> <span class="tycoon-key-src">${src}</span>`;
+      const baseTag = data.base_url ? ` <span class="tycoon-key-src">自定义端点</span>` : "";
+      badge.innerHTML = `<span class="tycoon-key-ok">●</span> Key 已配置 <span class="tycoon-key-mask">${data.masked || ""}</span> <span class="tycoon-key-src">${src}</span>${baseTag}`;
       btn.textContent = "修改";
       // 自动加载模型
       if (!llmModelsLoaded) loadLlmModels();
@@ -338,8 +344,10 @@ async function refreshArkKeyStatus() {
 
 async function saveArkKey() {
   const input = $("tycoon-key-input");
+  const baseInput = $("tycoon-base-url-input");
   const saveBtn = $("tycoon-key-save");
   const key = (input?.value || "").trim();
+  const baseUrl = (baseInput?.value || "").trim();
   if (!key) {
     setStatus("请粘贴 API Key", "error");
     input?.focus();
@@ -350,13 +358,13 @@ async function saveArkKey() {
     const r = await fetch("/api/ark_key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key }),
+      body: JSON.stringify({ key, base_url: baseUrl }),
     });
     const data = await r.json();
     if (!r.ok || !data.ok) {
       throw new Error(data.error || "验证失败");
     }
-    // 成功：关闭录入面板、清空输入、刷新状态
+    // 成功：关闭录入面板、清空 key 输入（base_url 由 refreshArkKeyStatus 回填）、刷新状态
     if (input) input.value = "";
     $("tycoon-key-edit").hidden = true;
     llmModelsLoaded = false;
@@ -432,9 +440,12 @@ async function loadLlmModels() {
       return;
     }
     const models = data.models || [];
+    const customBase = !!($("tycoon-base-url-input")?.value || "").trim();
     if (!models.length) {
       select.innerHTML = '<option value="">无可用模型</option>';
-      hint.textContent = "× Ark 账号未返回 Seed 系列视觉模型，请到火山引擎控制台开通。";
+      hint.textContent = customBase
+        ? "× 该端点 /models 未返回任何模型——请检查 Base URL 或在端点侧配置可用模型。"
+        : "× Ark 账号未返回 Seed 系列视觉模型，请到火山引擎控制台开通。";
       hint.classList.add("tycoon-hint-error");
       return;
     }
@@ -467,7 +478,9 @@ async function loadLlmModels() {
     } else if (groups.mini.length) {
       select.value = groups.mini[groups.mini.length - 1].id;
     }
-    hint.textContent = "已就绪。图片会上传至火山引擎服务器，按 token 计费。";
+    hint.textContent = customBase
+      ? "已就绪。图片会上传至你配置的自定义端点，按该端点策略计费。"
+      : "已就绪。图片会上传至火山引擎服务器，按 token 计费。";
     hint.classList.remove("tycoon-hint-error");
     llmModelsLoaded = true;
   } catch (e) {

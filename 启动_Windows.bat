@@ -12,6 +12,18 @@ chcp 65001 >nul 2>&1
 
 cd /d "%~dp0"
 
+REM Keep uv/pip caches and wheel extraction on the project drive, not C:.
+if not exist "%CD%\.uv-cache" mkdir "%CD%\.uv-cache" >nul 2>&1
+if not exist "%CD%\.uv-python" mkdir "%CD%\.uv-python" >nul 2>&1
+if not exist "%CD%\.pip-cache" mkdir "%CD%\.pip-cache" >nul 2>&1
+if not exist "%CD%\.tmp" mkdir "%CD%\.tmp" >nul 2>&1
+set "UV_CACHE_DIR=%CD%\.uv-cache"
+set "UV_PYTHON_INSTALL_DIR=%CD%\.uv-python"
+set "UV_MANAGED_PYTHON=1"
+set "PIP_CACHE_DIR=%CD%\.pip-cache"
+set "TMP=%CD%\.tmp"
+set "TEMP=%CD%\.tmp"
+
 echo.
 echo ============================================================
 echo   片刻 . 启动器

@@ -3112,7 +3112,8 @@ body:has(#view-processing.active) .status-badge {
   margin: 6px 0 8px;
 }
 .tycoon-row select,
-.tycoon-row input[type="password"] {
+.tycoon-row input[type="password"],
+.tycoon-row input[type="text"] {
   flex: 1;
   padding: 7px 10px;
   background: var(--bg-card);
@@ -3121,7 +3122,8 @@ body:has(#view-processing.active) .status-badge {
   color: var(--ink);
   font-size: 13px;
 }
-.tycoon-row input[type="password"] {
+.tycoon-row input[type="password"],
+.tycoon-row input[type="text"] {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 .btn-small {
